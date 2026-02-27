@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TAO 子网拍卖监控</title>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --green: #39d353;
+    --green-dim: #2ea043;
+    --red: #f85149;
+    --yellow: #d29922;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --purple: #a371f7;
+    --radius: 8px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── Header ───────────────────────────────────── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .header-left h1 { font-size: 18px; font-weight: 600; letter-spacing: .5px; }
+  .header-left .logo {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px; color: #fff;
+  }
+  .header-right { display: flex; align-items: center; gap: 20px; font-size: 13px; color: var(--text-dim); }
+  .conn-status { display: flex; align-items: center; gap: 6px; }
+  .conn-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red);
+    transition: background .3s;
+  }
+  .conn-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  /* ── Layout ───────────────────────────────────── */
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+  .grid-top { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+  .grid-mid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .grid-bot { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  @media (max-width: 1100px) {
+    .grid-top { grid-template-columns: repeat(2, 1fr); }
+    .grid-mid, .grid-bot { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 600px) {
+    .grid-top { grid-template-columns: 1fr; }
+    .container { padding: 12px; }
+  }
+
+  /* ── Card ──────────────────────────────────────── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+  .card-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+
+  /* ── Stat Cards ────────────────────────────────── */
+  .stat-value { font-size: 32px; font-weight: 700; line-height: 1.1; }
+  .stat-sub { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+  .stat-value.green { color: var(--green); }
+  .stat-value.red { color: var(--red); }
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.purple { color: var(--purple); }
+  .change-positive { color: var(--green); }
+  .change-negative { color: var(--red); }
+
+  /* ── K 线图区域 ─────────────────────────────────── */
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .granularity-btns {
+    display: flex;
+    gap: 4px;
+  }
+  .gran-btn {
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .gran-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .gran-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+    height: 320px;
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .chart-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    background: rgba(13,17,23,0.7);
+    z-index: 10;
+  }
+  .chart-loading.hidden { display: none; }
+
+  /* ── Alert Panel ───────────────────────────────── */
+  .alert-form { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .alert-form input, .alert-form select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .alert-form input:focus, .alert-form select:focus { border-color: var(--accent); }
+  .alert-form input.error { border-color: var(--red) !important; }
+  .alert-form input::placeholder { color: var(--text-dim); }
+  .btn {
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: opacity .2s;
+  }
+  .btn:hover { opacity: .85; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-sm { padding: 3px 8px; font-size: 11px; }
+
+  .alerts-list { max-height: 220px; overflow-y: auto; }
+  .alert-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .alert-item:last-child { border-bottom: none; }
+  .alert-label { font-weight: 500; }
+  .alert-meta { color: var(--text-dim); font-size: 12px; }
+  .alert-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .alert-badge.active { background: rgba(57,211,83,.15); color: var(--green); }
+  .alert-badge.triggered { background: rgba(248,81,73,.15); color: var(--red); }
+  .alert-actions { display: flex; gap: 6px; align-items: center; }
+
+  /* Toggle switch */
+  .toggle { position: relative; width: 34px; height: 18px; cursor: pointer; display: inline-block; }
+  .toggle input { display: none; }
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: var(--border);
+    border-radius: 9px;
+    transition: background .2s;
+  }
+  .toggle input:checked + .toggle-track { background: var(--green-dim); }
+  .toggle-thumb {
+    position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform .2s;
+  }
+  .toggle input:checked ~ .toggle-thumb { transform: translateX(16px); }
+
+  /* ── Events Feed ───────────────────────────────── */
+  .events-feed { max-height: 300px; overflow-y: auto; }
+  .event-item {
+    padding: 8px 10px;
+    border-left: 3px solid var(--accent);
+    margin-bottom: 8px;
+    background: rgba(88,166,255,.04);
+    border-radius: 0 4px 4px 0;
+    font-size: 13px;
+  }
+  .event-item.alert-event { border-left-color: var(--red); background: rgba(248,81,73,.04); }
+  .event-item.subnet-event { border-left-color: var(--green); background: rgba(57,211,83,.04); }
+  .event-time { font-size: 11px; color: var(--text-dim); }
+
+  /* ── Subnet Info ─────────────────────────────────── */
+  .subnet-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .subnet-info-item { }
+  .subnet-info-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px; }
+  .subnet-info-value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+
+  /* ── Scrollbar ─────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Toast ─────────────────────────────────────── */
+  .toast-container { position: fixed; top: 70px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    animation: slideIn .3s ease;
+    max-width: 340px;
+  }
+  .toast-alert { background: var(--red); color: #fff; }
+  .toast-info { background: var(--accent); color: #fff; }
+  .toast-success { background: var(--green-dim); color: #fff; }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+
+  .empty-placeholder { color: var(--text-dim); font-size: 13px; text-align: center; padding: 20px; }
+
+  /* USD badge next to price */
+  .usd-label {
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-dim);
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  /* ── Currency Toggle ────────────────────────────── */
+  .currency-btns { display: flex; gap: 4px; margin-left: 8px; }
+  .curr-btn {
+    padding: 3px 10px; border-radius: 4px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-dim); font-size: 12px;
+    cursor: pointer; transition: all .15s;
+  }
+  .curr-btn:hover { border-color: var(--green); color: var(--green); }
+  .curr-btn.active { background: var(--green-dim); border-color: var(--green); color: #fff; }
+
+  /* ── Subnet Registration Table ──────────────────── */
+  .grid-full { margin-bottom: 20px; }
+  .reg-table-wrap { overflow-x: auto; max-height: 400px; overflow-y: auto; }
+  .reg-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .reg-table th {
+    padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .6px; color: var(--text-dim);
+    border-bottom: 1px solid var(--border); position: sticky; top: 0;
+    background: var(--card); z-index: 1;
+  }
+  .reg-table td { padding: 7px 12px; border-bottom: 1px solid rgba(48,54,61,0.5); }
+  .reg-table tr:last-child td { border-bottom: none; }
+  .reg-table tr:hover td { background: rgba(88,166,255,.04); }
+  .sn-badge {
+    display: inline-block; padding: 1px 8px; border-radius: 12px; font-size: 12px;
+    font-weight: 600; background: rgba(88,166,255,.1); color: var(--accent);
+  }
+  .tao-cell { color: var(--accent); font-weight: 500; }
+  .usd-cell { color: var(--purple); font-weight: 500; }
+  .ts-cell { color: var(--text-dim); font-size: 12px; }
+  .reg-table-note { font-size: 11px; color: var(--text-dim); margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo">T</div>
+    <h1>TAO 子网拍卖监控</h1>
+  </div>
+  <div class="header-right">
+    <span id="clock">--:--:--</span>
+    <div class="conn-status">
+      <div class="conn-dot" id="connDot"></div>
+      <span id="connLabel">未连接</span>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Stats Row -->
+  <div class="grid-top">
+    <div class="card">
+      <div class="card-title">注册成本 (TAO)</div>
+      <div class="stat-value accent" id="priceTao">--</div>
+      <div class="stat-sub" id="priceRao">-- RAO</div>
+    </div>
+    <div class="card">
+      <div class="card-title">U 本位价值 (USD)</div>
+      <div class="stat-value purple" id="priceUsd">--</div>
+      <div class="stat-sub" id="taoUsdRate">TAO 汇率: --</div>
+    </div>
+    <div class="card">
+      <div class="card-title">24H 变化</div>
+      <div class="stat-value" id="change24h">--</div>
+      <div class="stat-sub" id="change24hAbs">--</div>
+    </div>
+    <div class="card">
+      <div class="card-title">当前子网数 / 更新时间</div>
+      <div class="stat-value green" id="subnetCount">--</div>
+      <div class="stat-sub" id="lastUpdatedAgo">等待数据...</div>
+    </div>
+  </div>
+
+  <!-- K线图 + Alert Config -->
+  <div class="grid-mid">
+    <div class="card">
+      <div class="chart-header">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="card-title" style="margin-bottom:0;">注册成本 K 线图</div>
+          <div class="currency-btns" id="currBtns">
+            <button class="curr-btn active" data-curr="TAO">TAO</button>
+            <button class="curr-btn" data-curr="USD">USD</button>
+          </div>
+        </div>
+        <div class="granularity-btns" id="granBtns">
+          <button class="gran-btn" data-gran="5m" data-days="1">5分</button>
+          <button class="gran-btn" data-gran="1h" data-days="7">1时</button>
+          <button class="gran-btn" data-gran="4h" data-days="30">4时</button>
+          <button class="gran-btn active" data-gran="1d" data-days="365">日K</button>
+          <button class="gran-btn" data-gran="1w" data-days="1095">周K</button>
+        </div>
+      </div>
+      <div class="chart-wrap" id="chartWrap">
+        <div class="chart-loading" id="chartLoading">加载历史数据中...</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">价格警报配置</div>
+      <div class="alert-form">
+        <input type="number" id="alertPrice" placeholder="价格 (TAO)" step="0.1" style="width:100px;">
+        <select id="alertDir">
+          <option value="below">低于</option>
+          <option value="above">高于</option>
+        </select>
+        <input type="text" id="alertLabel" placeholder="标签 (必填)" style="flex:1;min-width:80px;">
+        <button class="btn btn-primary" id="addAlertBtn">添加</button>
+      </div>
+      <div class="alerts-list" id="alertsList">
+        <div class="empty-placeholder">暂无警报</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Events + Subnet Info -->
+  <div class="grid-bot">
+    <div class="card">
+      <div class="card-title">事件日志</div>
+      <div class="events-feed" id="eventsFeed">
+        <div class="empty-placeholder">等待事件...</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">子网 & 价格概况</div>
+      <div class="subnet-info-grid">
+        <div class="subnet-info-item">
+          <div class="subnet-info-label">活跃子网</div>
+          <div class="subnet-info-value green" id="subnetCountBig">--</div>
+        </div>
+        <div class="subnet-info-item">
+          <div class="subnet-info-label">TAO/USD</div>
+          <div class="subnet-info-value accent" id="taoUsdBig">--</div>
+        </div>
+        <div class="subnet-info-item">
+          <div class="subnet-info-label">注册费 (TAO)</div>
+          <div class="subnet-info-value" id="priceTaoBig">--</div>
+        </div>
+        <div class="subnet-info-item">
+          <div class="subnet-info-label">注册费 (USD)</div>
+          <div class="subnet-info-value purple" id="priceUsdBig">--</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Subnet Registration History -->
+  <div class="grid-full card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div class="card-title" style="margin-bottom:0;">子网注册历史成交记录</div>
+      <span id="subnetRegCount" style="font-size:12px;color:var(--text-dim);">加载中...</span>
+    </div>
+    <div id="subnetRegTable">
+      <div class="empty-placeholder">加载子网数据中...</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+(function() {
+'use strict';
+
+// ─── State ──────────────────────────────────────────
+var state = {
+  ws: null,
+  connected: false,
+  reconnectTimer: null,
+  reconnectDelay: 1000,
+  alerts: [],
+  events: [],
+  lastPrice: null,
+  lastSubnetCount: null,
+  lastTimestamp: null,
+  cachedConfig: null,
+  currentGranularity: '1d',
+  currentDays: 365,
+  currentCurrency: 'TAO',  // 'TAO' 或 'USD'
+  klineChart: null,
+  candleSeries: null,
+  klineCandles: [],         // 原始 TAO 蜡烛数据，用于货币切换
+  taoUsdRate: 0,            // 当前 TAO/USD 汇率
+};
+
+const MAX_EVENTS = 30;
+
+// ─── DOM Refs ───────────────────────────────────────
+const $clock = document.getElementById('clock');
+const $connDot = document.getElementById('connDot');
+const $connLabel = document.getElementById('connLabel');
+const $priceTao = document.getElementById('priceTao');
+const $priceRao = document.getElementById('priceRao');
+const $priceUsd = document.getElementById('priceUsd');
+const $taoUsdRate = document.getElementById('taoUsdRate');
+const $change24h = document.getElementById('change24h');
+const $change24hAbs = document.getElementById('change24hAbs');
+const $subnetCount = document.getElementById('subnetCount');
+const $lastUpdatedAgo = document.getElementById('lastUpdatedAgo');
+const $alertsList = document.getElementById('alertsList');
+const $eventsFeed = document.getElementById('eventsFeed');
+const $toastContainer = document.getElementById('toastContainer');
+const $chartLoading = document.getElementById('chartLoading');
+const $subnetCountBig = document.getElementById('subnetCountBig');
+const $taoUsdBig = document.getElementById('taoUsdBig');
+const $priceTaoBig = document.getElementById('priceTaoBig');
+const $priceUsdBig = document.getElementById('priceUsdBig');
+
+// ─── Clock ──────────────────────────────────────────
+function tickClock() {
+  $clock.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}
+setInterval(tickClock, 1000);
+tickClock();
+
+// ─── lightweight-charts K 线图初始化 ────────────────
+function initKlineChart() {
+  var container = document.getElementById('chartWrap');
+
+  state.klineChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth,
+    height: 320,
+    layout: {
+      background: { type: 'solid', color: '#0d1117' },
+      textColor: '#8b949e',
+    },
+    grid: {
+      vertLines: { color: 'rgba(48,54,61,0.5)' },
+      horzLines: { color: 'rgba(48,54,61,0.5)' },
+    },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal,
+    },
+    rightPriceScale: {
+      borderColor: '#30363d',
+      mode: LightweightCharts.PriceScaleMode.Logarithmic,
+    },
+    timeScale: {
+      borderColor: '#30363d',
+      // timeVisible 由 updateTimeScaleForGranularity 动态控制
+      timeVisible: false,
+      secondsVisible: false,
+      rightOffset: 5,
+      // 时间轴刻度标签格式（闭包动态读取 state.currentGranularity）
+      // tickMarkType: 0=年 1=月 2=日 3=时间 4=含秒时间
+      tickMarkFormatter: function(time, tickMarkType) {
+        var d = new Date(time * 1000);
+        var gran = state.currentGranularity;
+        var y = d.getUTCFullYear();
+        var mo = d.getUTCMonth() + 1;
+        var day = d.getUTCDate();
+        var h = String(d.getUTCHours()).padStart(2, '0');
+        var min = String(d.getUTCMinutes()).padStart(2, '0');
+
+        if (tickMarkType === 0) return String(y);          // 年: "2024"
+        if (tickMarkType === 1) return mo + '月';          // 月: "3月"
+        if (tickMarkType === 2) {                          // 日
+          // 周K/日K 显示 "月/日" 格式，直观不含冗余
+          return mo + '/' + day;
+        }
+        if (tickMarkType === 3 || tickMarkType === 4) {    // 时间（5分/1时/4时）
+          return h + ':' + min;
+        }
+        return '';
+      },
+    },
+    localization: {
+      // 价格格式：动态读取 state，兼容 TAO/USD 切换（设置一次，无需 applyOptions 更新）
+      priceFormatter: function(p) {
+        if (state.currentCurrency === 'USD' && state.taoUsdRate > 0) {
+          if (p >= 1000000) return '$' + (p / 1000000).toFixed(2) + 'M';
+          if (p >= 100000) return '$' + (p / 1000).toFixed(1) + 'K';
+          if (p >= 1000) return '$' + p.toFixed(0);
+          return '$' + p.toFixed(2);
+        }
+        if (p >= 1000) return p.toFixed(1) + ' TAO';
+        if (p >= 10) return p.toFixed(2) + ' TAO';
+        return p.toFixed(4) + ' TAO';
+      },
+      // 十字线悬停时间格式：动态读取颗粒度，日K/周K 只显示日期
+      timeFormatter: function(time) {
+        var d = new Date(time * 1000);
+        var y = d.getUTCFullYear();
+        var mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+        var day = String(d.getUTCDate()).padStart(2, '0');
+        var h = String(d.getUTCHours()).padStart(2, '0');
+        var min = String(d.getUTCMinutes()).padStart(2, '0');
+        var gran = state.currentGranularity;
+
+        if (gran === '1d' || gran === '1w') {
+          return y + '-' + mo + '-' + day;
+        }
+        return y + '-' + mo + '-' + day + ' ' + h + ':' + min;
+      },
+    },
+  });
+
+  state.candleSeries = state.klineChart.addCandlestickSeries({
+    upColor: '#39d353',
+    downColor: '#f85149',
+    borderVisible: false,
+    wickUpColor: '#39d353',
+    wickDownColor: '#f85149',
+  });
+
+  // 响应式宽度
+  var ro = new ResizeObserver(function() {
+    if (state.klineChart) {
+      state.klineChart.applyOptions({ width: container.clientWidth });
+    }
+  });
+  ro.observe(container);
+}
+
+// ─── 按颗粒度更新时间轴可见性 ───────────────────────
+function updateTimeScaleForGranularity(gran) {
+  if (!state.klineChart) return;
+  // 日K/周K 时间轴只显示日期，不显示时间（否则会出现无意义的 "00:00"）
+  var showTime = (gran === '5m' || gran === '1h' || gran === '4h');
+  state.klineChart.applyOptions({ timeScale: { timeVisible: showTime } });
+}
+
+// ─── K 线数据加载 ────────────────────────────────────
+function loadKlineData(granularity, days) {
+  state.currentGranularity = granularity;
+  state.currentDays = days;
+
+  // 先更新时间轴设置，再加载数据，避免渲染时格式不对
+  updateTimeScaleForGranularity(granularity);
+  $chartLoading.classList.remove('hidden');
+
+  fetch('/api/kline?granularity=' + granularity + '&days=' + days)
+    .then(function(res) { return res.ok ? res.json() : Promise.reject('kline: ' + res.status); })
+    .then(function(data) {
+      var candles = data.candles || [];
+      console.log('[kline] Loaded', candles.length, 'candles for', granularity, '| currency:', state.currentCurrency);
+
+      if (candles.length === 0) {
+        $chartLoading.textContent = '暂无历史数据（服务刚启动，请稍候）';
+        return;
+      }
+
+      // 保存原始 TAO 蜡烛数据，用于货币切换时重算
+      state.klineCandles = candles;
+      applyChartCurrency();
+      $chartLoading.classList.add('hidden');
+    })
+    .catch(function(err) {
+      console.warn('[kline] Failed:', err);
+      $chartLoading.textContent = '加载失败: ' + err;
+    });
+}
+
+// ─── 应用当前货币换算到图表 ──────────────────────────
+function applyChartCurrency() {
+  var candles = state.klineCandles;
+  if (!candles || candles.length === 0 || !state.candleSeries) return;
+
+  var isUsd = state.currentCurrency === 'USD';
+  var rate = state.taoUsdRate || 0;
+
+  var chartData;
+  if (isUsd && rate > 0) {
+    chartData = candles.map(function(c) {
+      return {
+        time: c.time,
+        open: Math.round(c.open * rate * 100) / 100,
+        high: Math.round(c.high * rate * 100) / 100,
+        low: Math.round(c.low * rate * 100) / 100,
+        close: Math.round(c.close * rate * 100) / 100,
+      };
+    });
+    console.log('[chart] USD mode, rate:', rate, 'candles:', chartData.length);
+  } else {
+    chartData = candles.map(function(c) {
+      return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
+    });
+    console.log('[chart] TAO mode, candles:', chartData.length);
+  }
+  // 注：priceFormatter 和 timeFormatter 是动态闭包（读取 state），无需此处 applyOptions
+
+  state.candleSeries.setData(chartData);
+
+  // 默认显示最近 N 根蜡烛
+  var defaultView = { '5m': 60, '1h': 48, '4h': 60, '1d': 90, '1w': 52 };
+  var showLast = defaultView[state.currentGranularity] || 90;
+  if (chartData.length > showLast) {
+    state.klineChart.timeScale().setVisibleLogicalRange({
+      from: chartData.length - showLast,
+      to: chartData.length + 2,
+    });
+  } else {
+    state.klineChart.timeScale().fitContent();
+  }
+}
+
+// ─── 颗粒度按钮事件 ──────────────────────────────────
+document.getElementById('granBtns').addEventListener('click', function(e) {
+  var btn = e.target.closest('.gran-btn');
+  if (!btn) return;
+  document.querySelectorAll('.gran-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  loadKlineData(btn.dataset.gran, parseInt(btn.dataset.days, 10));
+});
+
+// ─── 货币切换按钮事件 ────────────────────────────────
+document.getElementById('currBtns').addEventListener('click', function(e) {
+  var btn = e.target.closest('.curr-btn');
+  if (!btn) return;
+  document.querySelectorAll('.curr-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  state.currentCurrency = btn.dataset.curr;
+  applyChartCurrency();
+  console.log('[chart] Currency switched to', state.currentCurrency);
+});
+
+// ─── Price Update ───────────────────────────────────
+function handlePriceUpdate(d) {
+  var ts = d.timestamp ? new Date(d.timestamp) : new Date();
+  var timeLabel = ts.toLocaleTimeString('zh-CN', { hour12: false });
+
+  state.lastPrice = d.price_tao;
+  state.lastSubnetCount = d.subnet_count;
+  state.lastTimestamp = ts;
+
+  // 注册费 TAO
+  $priceTao.textContent = formatNumber(d.price_tao, 4);
+  $priceRao.textContent = formatBigInt(d.price_rao) + ' RAO';
+
+  // USD 价值
+  if (d.price_usd !== undefined && d.price_usd > 0) {
+    $priceUsd.textContent = '$' + formatNumber(d.price_usd, 2);
+  }
+  if (d.tao_usd_rate !== undefined && d.tao_usd_rate > 0) {
+    $taoUsdRate.textContent = '1 TAO = $' + formatNumber(d.tao_usd_rate, 2);
+    $taoUsdBig.textContent = '$' + formatNumber(d.tao_usd_rate, 2);
+    // 同步到 state，供 K 线货币切换使用
+    state.taoUsdRate = d.tao_usd_rate;
+  }
+
+  // 子网数
+  $subnetCount.textContent = d.subnet_count;
+  $subnetCountBig.textContent = d.subnet_count;
+
+  // 子网概况
+  $priceTaoBig.textContent = formatNumber(d.price_tao, 4);
+  if (d.price_usd > 0) {
+    $priceUsdBig.textContent = '$' + formatNumber(d.price_usd, 2);
+  }
+
+  // 最后更新
+  $lastUpdatedAgo.textContent = timeLabel;
+
+  console.log('[price_update]', d.price_tao, 'TAO', d.price_usd ? '/ $' + d.price_usd : '', 'subnets:', d.subnet_count);
+}
+
+// ─── New Subnet ─────────────────────────────────────
+function handleNewSubnet(d) {
+  var ts = d.timestamp ? new Date(d.timestamp) : new Date();
+  addEvent('subnet-event', ts, '检测到新子网 #' + d.subnet_id);
+  showToast('info', '新子网 #' + d.subnet_id + ' 已注册');
+  console.log('[new_subnet]', d.subnet_id);
+}
+
+// ─── Alert Triggered ────────────────────────────────
+function handleAlertTriggered(d) {
+  addEvent('alert-event', new Date(),
+    '警报触发: ' + d.label + ' — ' + d.type + ' ' + d.price_tao + ' TAO');
+  showToast('alert', '警报: ' + d.label);
+
+  var match = state.alerts.find(function(a) {
+    return a.label === d.label && Math.abs(a.price - d.price_tao) < 0.0001;
+  });
+  if (match) {
+    match.triggered = true;
+    renderAlerts();
+  }
+  console.log('[alert_triggered]', d.label);
+}
+
+// ─── Events Feed ────────────────────────────────────
+function addEvent(type, ts, text) {
+  state.events.push({ type: type, ts: ts, text: text });
+  if (state.events.length > MAX_EVENTS) state.events.shift();
+  renderEvents();
+}
+
+function renderEvents() {
+  while ($eventsFeed.firstChild) {
+    $eventsFeed.removeChild($eventsFeed.firstChild);
+  }
+
+  if (state.events.length === 0) {
+    var placeholder = document.createElement('div');
+    placeholder.className = 'empty-placeholder';
+    placeholder.textContent = '等待事件...';
+    $eventsFeed.appendChild(placeholder);
+    return;
+  }
+
+  var reversed = state.events.slice().reverse();
+  reversed.forEach(function(e) {
+    var div = document.createElement('div');
+    div.className = 'event-item ' + (e.type || '');
+
+    var timeSpan = document.createElement('span');
+    timeSpan.className = 'event-time';
+    timeSpan.textContent = (e.ts instanceof Date)
+      ? e.ts.toLocaleTimeString('zh-CN', { hour12: false })
+      : e.ts;
+
+    div.appendChild(timeSpan);
+    div.appendChild(document.createTextNode(' \u2014 ' + e.text));
+    $eventsFeed.appendChild(div);
+  });
+}
+
+// ─── Alerts CRUD ────────────────────────────────────
+var alertIdCounter = 0;
+
+function addAlert() {
+  var priceEl = document.getElementById('alertPrice');
+  var labelEl = document.getElementById('alertLabel');
+  var price = parseFloat(priceEl.value);
+  var direction = document.getElementById('alertDir').value;
+  var label = labelEl.value.trim();
+
+  // 验证输入，失败时高亮并提示
+  var valid = true;
+  if (isNaN(price) || price <= 0) {
+    priceEl.classList.add('error');
+    valid = false;
+  } else {
+    priceEl.classList.remove('error');
+  }
+  if (!label) {
+    labelEl.classList.add('error');
+    valid = false;
+  } else {
+    labelEl.classList.remove('error');
+  }
+  if (!valid) {
+    showToast('alert', '请填写价格和标签');
+    return;
+  }
+
+  var alert = {
+    id: ++alertIdCounter,
+    price: price,
+    direction: direction,
+    label: label,
+    enabled: true,
+    triggered: false,
+  };
+  state.alerts.push(alert);
+  renderAlerts();
+  saveAlertsToBackend();
+
+  priceEl.value = '';
+  labelEl.value = '';
+  showToast('success', '警报已添加: ' + label);
+  console.log('[addAlert]', label, direction, price);
+}
+
+function removeAlert(id) {
+  var idx = state.alerts.findIndex(function(a) { return a.id === id; });
+  if (idx === -1) return;
+  var removed = state.alerts.splice(idx, 1)[0];
+  renderAlerts();
+  saveAlertsToBackend();
+  console.log('[removeAlert]', removed.label);
+}
+
+function toggleAlertById(id) {
+  var a = state.alerts.find(function(a) { return a.id === id; });
+  if (!a) return;
+  a.enabled = !a.enabled;
+  renderAlerts();
+  console.log('[toggleAlert]', a.label, a.enabled);
+}
+
+function renderAlerts() {
+  while ($alertsList.firstChild) {
+    $alertsList.removeChild($alertsList.firstChild);
+  }
+
+  if (state.alerts.length === 0) {
+    var placeholder = document.createElement('div');
+    placeholder.className = 'empty-placeholder';
+    placeholder.textContent = '暂无警报';
+    $alertsList.appendChild(placeholder);
+    return;
+  }
+
+  state.alerts.forEach(function(a) {
+    var row = document.createElement('div');
+    row.className = 'alert-item';
+
+    var infoDiv = document.createElement('div');
+    var labelDiv = document.createElement('div');
+    labelDiv.className = 'alert-label';
+    labelDiv.textContent = a.label;
+    var metaDiv = document.createElement('div');
+    metaDiv.className = 'alert-meta';
+    metaDiv.textContent = (a.direction === 'below' ? '低于' : '高于') + ' ' + a.price + ' TAO';
+    infoDiv.appendChild(labelDiv);
+    infoDiv.appendChild(metaDiv);
+
+    var actionsDiv = document.createElement('div');
+    actionsDiv.className = 'alert-actions';
+
+    var badge = document.createElement('span');
+    badge.className = 'alert-badge ' + (a.triggered ? 'triggered' : 'active');
+    badge.textContent = a.triggered ? '已触发' : '监控中';
+
+    var toggleLabel = document.createElement('label');
+    toggleLabel.className = 'toggle';
+    var toggleInput = document.createElement('input');
+    toggleInput.type = 'checkbox';
+    toggleInput.checked = a.enabled;
+    (function(alertId) {
+      toggleInput.addEventListener('change', function() { toggleAlertById(alertId); });
+    })(a.id);
+    var toggleTrack = document.createElement('div');
+    toggleTrack.className = 'toggle-track';
+    var toggleThumb = document.createElement('div');
+    toggleThumb.className = 'toggle-thumb';
+    toggleLabel.appendChild(toggleInput);
+    toggleLabel.appendChild(toggleTrack);
+    toggleLabel.appendChild(toggleThumb);
+
+    var deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-danger btn-sm';
+    deleteBtn.textContent = '删除';
+    (function(alertId) {
+      deleteBtn.addEventListener('click', function() { removeAlert(alertId); });
+    })(a.id);
+
+    actionsDiv.appendChild(badge);
+    actionsDiv.appendChild(toggleLabel);
+    actionsDiv.appendChild(deleteBtn);
+
+    row.appendChild(infoDiv);
+    row.appendChild(actionsDiv);
+    $alertsList.appendChild(row);
+  });
+}
+
+// ─── Toast ──────────────────────────────────────────
+function showToast(type, msg) {
+  var el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  $toastContainer.appendChild(el);
+  setTimeout(function() {
+    el.style.animation = 'fadeOut .3s ease forwards';
+    setTimeout(function() { el.remove(); }, 300);
+  }, 4000);
+}
+
+// ─── WebSocket ──────────────────────────────────────
+function connectWS() {
+  if (state.ws && (state.ws.readyState === WebSocket.CONNECTING || state.ws.readyState === WebSocket.OPEN)) {
+    return;
+  }
+
+  var wsUrl = 'ws://' + window.location.host + '/ws';
+  console.log('[ws] Connecting to', wsUrl);
+  var ws = new WebSocket(wsUrl);
+
+  ws.onopen = function() {
+    state.connected = true;
+    state.reconnectDelay = 1000;
+    $connDot.classList.add('connected');
+    $connLabel.textContent = '已连接';
+    addEvent('', new Date(), 'WebSocket 连接已建立');
+    console.log('[ws] Connected');
+  };
+
+  ws.onmessage = function(evt) {
+    var msg;
+    try { msg = JSON.parse(evt.data); } catch (e) { console.warn('[ws] Parse error:', e); return; }
+
+    switch (msg.type) {
+      case 'price_update':
+        handlePriceUpdate(msg);
+        break;
+      case 'new_subnet':
+        handleNewSubnet(msg);
+        break;
+      case 'alert_triggered':
+        handleAlertTriggered(msg);
+        break;
+      default:
+        console.log('[ws] Unknown type:', msg.type);
+    }
+  };
+
+  ws.onclose = function(evt) {
+    state.connected = false;
+    $connDot.classList.remove('connected');
+    $connLabel.textContent = '已断开';
+    console.log('[ws] Disconnected, code:', evt.code);
+    scheduleReconnect();
+  };
+
+  ws.onerror = function(err) {
+    console.error('[ws] Error:', err);
+    ws.close();
+  };
+
+  state.ws = ws;
+}
+
+function scheduleReconnect() {
+  if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = setTimeout(function() {
+    connectWS();
+  }, state.reconnectDelay);
+  state.reconnectDelay = Math.min(state.reconnectDelay * 1.5, 30000);
+}
+
+// ─── 保存警报到后端 ──────────────────────────────────
+function saveAlertsToBackend() {
+  var config = Object.assign({}, state.cachedConfig || {
+    api_key: '',
+    poll_interval_seconds: 30,
+    notification_enabled: true,
+  });
+  config.alert_thresholds = state.alerts.map(function(a) {
+    return {
+      price_tao: a.price,
+      type: a.direction,
+      label: a.label,
+      triggered: a.triggered || false,
+    };
+  });
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+    .then(function(res) { return res.ok ? res.json() : Promise.reject('save config: ' + res.status); })
+    .then(function(r) {
+      if (r.config) state.cachedConfig = r.config;
+      console.log('[api] Config saved, thresholds:', config.alert_thresholds.length);
+    })
+    .catch(function(err) { console.warn('[api] Failed to save config:', err); });
+}
+
+// ─── REST 初始加载 ────────────────────────────────────
+function fetchInitialData() {
+  // 1. 当前价格
+  fetch('/api/current')
+    .then(function(res) { return res.ok ? res.json() : Promise.reject('current: ' + res.status); })
+    .then(function(data) {
+      handlePriceUpdate(data);
+      console.log('[api] Current:', data.price_tao, 'TAO, $', data.price_usd);
+    })
+    .catch(function(err) { console.warn('[api] Failed to fetch current:', err); });
+
+  // 2. 近24h历史（用于计算24h变化率）
+  fetch('/api/history?hours=24')
+    .then(function(res) { return res.ok ? res.json() : Promise.reject('history: ' + res.status); })
+    .then(function(data) {
+      var history = data.price_history || [];
+      if (history.length >= 2) {
+        var first = history[0].price_tao;
+        var last = history[history.length - 1].price_tao;
+        if (first > 0) {
+          var pct = ((last - first) / first) * 100;
+          var sign = pct >= 0 ? '+' : '';
+          $change24h.textContent = sign + pct.toFixed(2) + '%';
+          $change24h.className = 'stat-value ' + (pct >= 0 ? 'green' : 'red');
+          var absDiff = last - first;
+          $change24hAbs.textContent = (absDiff >= 0 ? '+' : '') + absDiff.toFixed(4) + ' TAO';
+          $change24hAbs.className = 'stat-sub ' + (pct >= 0 ? 'change-positive' : 'change-negative');
+        }
+      }
+      // 历史子网事件
+      var events = data.new_subnet_events || [];
+      events.forEach(function(e) {
+        addEvent('subnet-event', new Date(e.timestamp), '历史: 新子网 #' + e.subnet_id);
+      });
+      console.log('[api] History:', history.length, 'records');
+    })
+    .catch(function(err) { console.warn('[api] Failed to fetch history:', err); });
+
+  // 3. 告警配置
+  fetch('/api/config')
+    .then(function(res) { return res.ok ? res.json() : Promise.reject('config: ' + res.status); })
+    .then(function(config) {
+      state.cachedConfig = config;
+      var thresholds = config.alert_thresholds || [];
+      state.alerts = [];
+      alertIdCounter = 0;
+      thresholds.forEach(function(t) {
+        state.alerts.push({
+          id: ++alertIdCounter,
+          price: t.price_tao,
+          direction: t.type,
+          label: t.label || '警报',
+          enabled: true,
+          triggered: t.triggered || false,
+        });
+      });
+      renderAlerts();
+      console.log('[api] Config:', thresholds.length, 'alert thresholds');
+    })
+    .catch(function(err) { console.warn('[api] Failed to fetch config:', err); });
+}
+
+// ─── 子网注册历史 ────────────────────────────────────
+function fetchSubnetRegistrations() {
+  fetch('/api/subnet-registrations')
+    .then(function(res) { return res.ok ? res.json() : Promise.reject('subnet-reg: ' + res.status); })
+    .then(function(data) {
+      var regs = data.registrations || [];
+      var rate = data.tao_usd_rate || 0;
+      renderSubnetRegistrations(regs, rate);
+      console.log('[api] Subnet registrations:', regs.length, 'records, rate: $' + rate);
+    })
+    .catch(function(err) { console.warn('[api] Failed to fetch subnet registrations:', err); });
+}
+
+function renderSubnetRegistrations(regs, usdRate) {
+  var container = document.getElementById('subnetRegTable');
+  var countEl = document.getElementById('subnetRegCount');
+
+  if (regs.length === 0) {
+    container.innerHTML = '<div class="empty-placeholder">暂无数据，等待子网信息加载完成...</div>';
+    if (countEl) countEl.textContent = '0 条记录';
+    return;
+  }
+
+  if (countEl) {
+    countEl.textContent = regs.length + ' 条记录' + (usdRate > 0 ? ' | 当前汇率: $' + formatNumber(usdRate, 2) + '/TAO' : '');
+  }
+
+  var html = '<div class="reg-table-wrap"><table class="reg-table"><thead><tr>' +
+    '<th>子网</th><th>注册时间</th><th>TAO 成本</th><th>USD 成本（当前汇率）</th>' +
+    '</tr></thead><tbody>';
+
+  regs.forEach(function(r) {
+    var ts = r.registration_timestamp ? new Date(r.registration_timestamp) : null;
+    var dateStr = '--';
+    if (ts && !isNaN(ts.getTime())) {
+      dateStr = ts.getFullYear() + '-' +
+        String(ts.getMonth() + 1).padStart(2, '0') + '-' +
+        String(ts.getDate()).padStart(2, '0') + ' ' +
+        String(ts.getHours()).padStart(2, '0') + ':' +
+        String(ts.getMinutes()).padStart(2, '0');
+    }
+    var usdStr = (r.registration_cost_usd > 0)
+      ? '$' + formatNumber(r.registration_cost_usd, 0)
+      : '--';
+
+    html += '<tr>' +
+      '<td><span class="sn-badge">SN' + r.netuid + '</span></td>' +
+      '<td class="ts-cell">' + dateStr + '</td>' +
+      '<td class="tao-cell">' + formatNumber(r.registration_cost_tao, 4) + ' TAO</td>' +
+      '<td class="usd-cell">' + usdStr + '</td>' +
+      '</tr>';
+  });
+
+  html += '</tbody></table></div>' +
+    '<p class="reg-table-note">* USD 成本基于当前 TAO/USD 汇率估算，非注册当时的实际 USD 价格</p>';
+  container.innerHTML = html;
+}
+
+// ─── REST 轮询兜底 ────────────────────────────────────
+setInterval(function() {
+  if (state.connected) return;
+  fetch('/api/current')
+    .then(function(res) { return res.ok ? res.json() : null; })
+    .then(function(data) { if (data && data.price_tao !== undefined) handlePriceUpdate(data); })
+    .catch(function() { /* silent fallback */ });
+}, 30000);
+
+// ─── Utilities ──────────────────────────────────────
+function formatNumber(n, decimals) {
+  if (n === null || n === undefined || isNaN(n)) return '--';
+  return Number(n).toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+function formatBigInt(n) {
+  if (n === null || n === undefined) return '--';
+  return Number(n).toLocaleString('en-US');
+}
+
+// ─── 事件绑定 ────────────────────────────────────────
+document.getElementById('addAlertBtn').addEventListener('click', addAlert);
+
+// Enter 键提交警报
+['alertPrice', 'alertLabel'].forEach(function(id) {
+  document.getElementById(id).addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') addAlert();
+  });
+});
+
+// ─── 初始化 ──────────────────────────────────────────
+initKlineChart();
+fetchInitialData();
+fetchSubnetRegistrations();
+connectWS();
+loadKlineData('1d', 365);
+// 每 2 分钟刷新一次子网注册历史（子网不频繁变化）
+setInterval(fetchSubnetRegistrations, 120000);
+console.log('[init] TAO 子网拍卖监控面板 v2.0 已启动');
+
+})();
+</script>
+</body>
+</html>

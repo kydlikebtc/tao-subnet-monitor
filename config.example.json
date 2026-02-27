@@ -1,0 +1,19 @@
+{
+  "api_key": "your-taostats-api-key-here",
+  "alert_thresholds": [
+    {
+      "price_tao": 100.0,
+      "type": "below",
+      "triggered": false,
+      "label": "低价买入点"
+    },
+    {
+      "price_tao": 500.0,
+      "type": "above",
+      "triggered": false,
+      "label": "高价预警"
+    }
+  ],
+  "poll_interval_seconds": 30,
+  "notification_enabled": true
+}

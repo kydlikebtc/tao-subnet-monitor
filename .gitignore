@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# 运行时数据（历史缓存不纳入版本控制，体积过大）
+data/historical_cache.json
+data/history.json
+logs/
+
+# 本地配置（含 API Key，不提交）
+config.json
+
+# 调试 & 临时文件
+firebase-debug.log
+test_frontend.py
+*.log
+
+# Loki Mode 工作目录
+.loki/
+
+# macOS
+.DS_Store
