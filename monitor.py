@@ -57,10 +57,9 @@ STATS_API_URL = "https://api.taostats.io/api/stats/latest/v1"
 SUBNETS_API_URL = "https://api.taostats.io/api/subnet/latest/v1"
 TAOSTATS_HISTORY_URL = "https://api.taostats.io/api/stats/history/v1"
 
-# CoinGecko TAO/USD 价格
-COINGECKO_PRICE_URL = (
-    "https://api.coingecko.com/api/v3/simple/price?ids=bittensor&vs_currencies=usd"
-)
+# CoinMarketCap TAO/USD 价格
+CMC_PRICE_URL = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
+CMC_API_KEY = os.environ.get("CMC_API_KEY", "fffa65cf-bf4f-4405-9f95-89d3109511cb")
 
 # K 线颗粒度（秒）
 GRANULARITY_SECONDS: dict[str, int] = {
@@ -286,18 +285,29 @@ async def _fetch_subnets(client: httpx.AsyncClient) -> list[dict[str, Any]] | No
 
 
 async def _fetch_tao_usd_price(client: httpx.AsyncClient) -> float | None:
-    """从 CoinGecko 获取 TAO/USD 实时价格"""
+    """从 CoinMarketCap 获取 TAO/USD 实时价格"""
     try:
-        resp = await client.get(COINGECKO_PRICE_URL, timeout=10)
+        resp = await client.get(
+            CMC_PRICE_URL,
+            headers={"X-CMC_PRO_API_KEY": CMC_API_KEY, "Accept": "application/json"},
+            params={"symbol": "TAO", "convert": "USD"},
+            timeout=10,
+        )
         resp.raise_for_status()
         data = resp.json()
-        price = data.get("bittensor", {}).get("usd")
+        price = (
+            data.get("data", {})
+                .get("TAO", {})
+                .get("quote", {})
+                .get("USD", {})
+                .get("price")
+        )
         if price is not None:
-            logger.info("TAO/USD 价格: $%.4f", price)
+            logger.info("TAO/USD 价格 (CMC): $%.4f", price)
             return float(price)
-        logger.warning("CoinGecko 响应中未找到 bittensor 价格: %s", data)
+        logger.warning("CoinMarketCap 响应中未找到 TAO 价格: %s", data)
     except Exception:
-        logger.warning("获取 TAO/USD 价格失败")
+        logger.warning("获取 TAO/USD 价格失败 (CMC)")
     return None
 
 
