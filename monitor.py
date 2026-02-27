@@ -112,15 +112,33 @@ class HistoryData(BaseModel):
 # 配置与历史数据 I/O（须在 MonitorState 前定义）
 # ---------------------------------------------------------------------------
 def _load_config() -> AppConfig:
-    """从 config.json 加载配置，文件不存在则使用默认值"""
+    """
+    加载配置，优先级：config.json > 环境变量 > 默认值。
+    部署到云平台时，通过环境变量 TAOSTATS_API_KEY 传入 API Key。
+    """
+    config = AppConfig()
+
+    # 优先从 config.json 加载（本地开发）
     if CONFIG_PATH.exists():
         try:
             raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            config = AppConfig(**raw)
             logger.info("配置文件已加载: %s", CONFIG_PATH)
-            return AppConfig(**raw)
         except Exception:
-            logger.exception("加载配置文件失败，使用默认配置")
-    return AppConfig()
+            logger.exception("加载配置文件失败，尝试环境变量")
+
+    # 环境变量覆盖（云部署）：TAOSTATS_API_KEY 优先级最高
+    env_api_key = os.environ.get("TAOSTATS_API_KEY", "").strip()
+    if env_api_key:
+        config.api_key = env_api_key
+        logger.info("API Key 已从环境变量 TAOSTATS_API_KEY 加载")
+
+    # POLL_INTERVAL_SECONDS 可选覆盖
+    env_poll = os.environ.get("POLL_INTERVAL_SECONDS", "").strip()
+    if env_poll.isdigit():
+        config.poll_interval_seconds = int(env_poll)
+
+    return config
 
 
 def _save_config(config: AppConfig) -> None:
